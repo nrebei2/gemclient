@@ -33,6 +33,20 @@ pub fn build(b: *std.Build) void {
         .root_module = exe_mod,
     });
 
+    exe.linkFramework("OpenGL");
+    exe.linkFramework("IOKit");
+    exe.linkFramework("Cocoa");
+    exe.linkFramework("GLUT");
+
+    exe.addIncludePath(.{ .cwd_relative = "include/" });
+    exe.addIncludePath(.{ .cwd_relative = "/opt/homebrew/include/" });
+
+    exe.linkLibC();
+    exe.addLibraryPath(.{ .cwd_relative = "lib/" });
+
+    exe.linkSystemLibrary("raylib.5.5.0");
+    exe.linkSystemLibrary("clay");
+
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).
