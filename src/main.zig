@@ -4,6 +4,7 @@ const gemini = @import("gemini.zig");
 const rl = @import("raylib");
 const cl = @import("zclay");
 const renderer = @import("raylib_render_clay.zig");
+const parser = @import("gemtext_parser.zig");
 
 const light_grey: cl.Color = .{ 224, 215, 210, 255 };
 const red: cl.Color = .{ 168, 66, 28, 255 };
@@ -19,6 +20,18 @@ pub fn main() !void {
     const memory = try allocator.alloc(u8, min_memory_size);
     defer allocator.free(memory);
 
+    const url = "gemini://geminiprotocol.net/";
+    const result = gemini.fetch(allocator, url);
+
+    var response: std.ArrayList(u8) = undefined;
+    defer response.deinit();
+    if (result catch null) |r| {
+        response = r.response_storage;
+    } else {
+        response = std.ArrayList(u8).init(allocator);
+        try std.fmt.format(response.writer(), "Could not fetch {s}!", .{url});
+    }
+
     const arena: cl.Arena = cl.createArenaWithCapacityAndMemory(memory);
     _ = cl.initialize(arena, .{ .h = 1000, .w = 1000 }, .{});
     cl.setMeasureTextFunction({}, renderer.measureText);
@@ -32,18 +45,6 @@ pub fn main() !void {
     rl.setTargetFPS(120);
 
     loadFont(@embedFile("resources/Roboto-Regular.ttf"), 0, 24);
-
-    const url = "gemini://carcosa.net";
-    const result = gemini.fetch(allocator, url);
-
-    var response: std.ArrayList(u8) = undefined;
-    defer response.deinit();
-    if (result catch null) |r| {
-        response = r.response_storage;
-    } else {
-        response = std.ArrayList(u8).init(allocator);
-        try std.fmt.format(response.writer(), "Could not fetch {s}!", .{url});
-    }
 
     var mouse_down_on_scrollbar = false;
     var scroll_bar_data: struct{click_origin: cl.Vector2, position_origin: cl.Vector2} = undefined;
@@ -92,17 +93,24 @@ pub fn main() !void {
             }
         }
 
-        var render_commands = createLayout(response.items, mouse_down_on_scrollbar);
+        var p = parser.GemtextParser.new(response.items);
+        var render_commands = createLayout(&p, mouse_down_on_scrollbar);
         rl.beginDrawing();
         renderer.clayRaylibRender(&render_commands, allocator);
         rl.endDrawing();
     }
 }
 
-fn createLayout(content: []u8, mouse_down_on_scrollbar: bool) cl.ClayArray(cl.RenderCommand) {
+fn createLayout(content: *parser.GemtextParser, mouse_down_on_scrollbar: bool) cl.ClayArray(cl.RenderCommand) {
     cl.beginLayout();
     cl.UI()(.{ .id = .ID("MainContent"), .layout = .{ .direction = .top_to_bottom, .sizing = .grow, .padding = .all(16), .child_gap = 16 }, .background_color = white, .scroll = .{ .vertical = true } })({
-        cl.text(content, .{});
+
+        while (content.next()) |line| {
+            switch (line) {
+                .text => |t| cl.text(t, .{}),  
+                else => {}
+            }
+        }
     });
 
     const scrollData = cl.getScrollContainerData(cl.getElementId("MainContent"));
