@@ -31,7 +31,7 @@ pub fn clayRaylibRender(render_commands: *cl.ClayArray(cl.RenderCommand), alloca
                 rl.setTextLineSpacing(config.line_height);
                 rl.drawTextEx(
                     fontToUse,
-                    @ptrCast(@alignCast(cloned.ptr)),
+                    cloned,
                     rl.Vector2{ .x = bounding_box.x, .y = bounding_box.y },
                     @floatFromInt(config.font_size),
                     @floatFromInt(config.letter_spacing),

@@ -20,6 +20,7 @@ const light_blue: cl.Color = .{ 96, 130, 182, 255 };
 
 cur_url: []const u8, // owned
 cur_response: std.ArrayList(u8),
+cur_status: gemini.Status = .success,
 hovered_str: ?[]const u8 = null,
 allocator: std.mem.Allocator,
 
@@ -36,12 +37,15 @@ pub fn init(allocator: std.mem.Allocator, starting_url: []const u8) !Self {
 }
 
 fn update_response(self: *Self) !void {
-    if (gemini.fetch(self.allocator, self.cur_url, &self.cur_response) catch null) |result| {
-        _ = result;
+    self.cur_response.clearRetainingCapacity();
+    if (gemini.fetch(self.allocator, self.cur_url, &self.cur_response) catch null) |status| {
+        self.cur_status = status;
     } else {
-        self.cur_response.clearRetainingCapacity();
+        self.cur_status = .not_found;
         try std.fmt.format(self.cur_response.writer(), "Could not fetch {s}", .{self.cur_url});
     }
+
+    // std.log.debug("{s}", .{self.cur_response.items});
 }
 
 fn set_url(self: *Self, url: []const u8, url_type: enum{relative, absolute}) !void {
@@ -85,62 +89,29 @@ pub fn update(self: *Self, mouse_pos: cl.Vector2) void {
         }
     }
 
-    var gp = parser.GemtextParser.new(self.cur_response.items);
-    var render_commands = self.createLayout(&gp, self.mouse_down_on_scrollbar);
+    var render_commands = self.createLayout(self.mouse_down_on_scrollbar);
     rl.beginDrawing();
     renderer.clayRaylibRender(&render_commands, self.allocator);
     rl.endDrawing();
 }
 
-fn createLayout(self: *Self, content: *parser.GemtextParser, mouse_down_on_scrollbar: bool) cl.ClayArray(cl.RenderCommand) {
+fn createLayout(self: *Self, mouse_down_on_scrollbar: bool) cl.ClayArray(cl.RenderCommand) {
     cl.beginLayout();
-    cl.UI()(.{ .id = .ID("MainContent"), .layout = .{ .direction = .top_to_bottom, .sizing = .grow, .padding = .all(32), .child_gap = 10 }, .background_color = nice_grey, .scroll = .{ .vertical = true } })({
-        while (content.next()) |line| {
-            switch (line) {
-                .text => |t| cl.text(t, .{ .font_size = 25, .color = white }),
-                .list => |l| {
-                    cl.UI()(.{ .id = .ID(l), .layout = .{ .padding = .{ .left = 20 } } })({
-                        cl.text("■", .{
-                            .color = orange,
-                            .letter_spacing = 6,
-                            .font_size = 30,
-                        });
-                        cl.text(l, .{ .color = green, .font_size = 25 });
-                    });
-                },
-                .quote => |q| {
-                    cl.UI()(.{ .id = .ID(q), .background_color = dark_grey, .corner_radius = cl.CornerRadius.all(4), .layout = .{ .sizing = cl.Sizing{ .h = .fit, .w = .grow } } })({
-                        cl.text("█", .{ .color = light_grey, .letter_spacing = 6, .font_size = 30 });
-                        cl.text(q, .{ .color = white, .font_size = 25 });
-                    });
-                },
-                .heading => |h| {
-                    cl.text(h.content, .{ .color = switch (h.level) {
-                        .normal => purple,
-                        .sub => green,
-                        .sub_sub => orange,
-                    }, .font_size = switch (h.level) {
-                        .normal => 40,
-                        .sub => 35,
-                        .sub_sub => 32,
-                    } });
-                },
-                .link => |l| {
-                    cl.UI()(.{ .id = .ID(l.url), .border = if (cl.hovered()) .{} else .{ .color = blue, .width = .{ .bottom = 2 } } })({
-                        cl.onHover(self, onLinkHover);
-                        cl.text(l.desc orelse l.url, .{ .color = if (cl.hovered()) light_blue else blue, .font_size = 25 });
-                    });
-                },
-                .preformat => |pf| {
-                    cl.UI()(.{ .background_color = .{ 40, 43, 48, 255 }, .corner_radius = cl.CornerRadius.all(2), .border = .{ .color = dark_grey, .width = cl.BorderWidth.outside(2) } })({
-                        cl.UI()(.{ .layout = .{ .padding = .{ .left = 15, .right = 40 } } })({
-                            cl.text(pf, .{ .color = white, .font_size = 20, .font_id = 1 });
-                        });
-                    });
-                },
+    cl.UI()(.{ .id = .ID("OuterContainer"), .layout = .{ .direction = .top_to_bottom, .sizing = .grow } })({
+        cl.UI()(.{ .id = .ID("TopPanel"), .layout = .{ .direction = .left_to_right, .sizing = .grow }, .background_color = blue })({
+            cl.text("⬅️ Testing...", .{ .font_size = 25, .color = light_grey }); 
+        });
+        cl.UI()(.{ .id = .ID("MainContent"), .layout = .{ .direction = .top_to_bottom, .sizing = .grow, .padding = .all(32), .child_gap = 10 }, .background_color = nice_grey, .scroll = .{ .vertical = true } })({
+            if (self.cur_status == .success) {
+                var content = parser.GemtextParser.new(self.cur_response.items);
+                self.gemtextLayout(&content);
+            } else {
+                cl.text(@tagName(self.cur_status), .{ .font_size = 25, .color = red });
+                cl.text(self.cur_response.items, .{ .font_size = 25, .color = white });
             }
-        }
+        });
     });
+
 
     const scrollData = cl.getScrollContainerData(cl.getElementId("MainContent"));
     if (scrollData.found) {
@@ -164,6 +135,54 @@ fn createLayout(self: *Self, content: *parser.GemtextParser, mouse_down_on_scrol
     }
 
     return cl.endLayout();
+}
+
+fn gemtextLayout(self: *Self, content: *parser.GemtextParser) void {
+    while (content.next()) |line| {
+        switch (line) {
+            .text => |t| cl.text(t, .{ .font_size = 25, .color = white }),
+            .list => |l| {
+                cl.UI()(.{ .id = .ID(l), .layout = .{ .padding = .{ .left = 20 } } })({
+                    cl.text("■", .{
+                        .color = orange,
+                        .letter_spacing = 6,
+                        .font_size = 30,
+                    });
+                    cl.text(l, .{ .color = green, .font_size = 25 });
+                });
+            },
+            .quote => |q| {
+                cl.UI()(.{ .id = .ID(q), .background_color = dark_grey, .corner_radius = cl.CornerRadius.all(4), .layout = .{ .sizing = cl.Sizing{ .h = .fit, .w = .grow } } })({
+                    cl.text("█", .{ .color = light_grey, .letter_spacing = 6, .font_size = 30 });
+                    cl.text(q, .{ .color = white, .font_size = 25 });
+                });
+            },
+            .heading => |h| {
+                cl.text(h.content, .{ .color = switch (h.level) {
+                    .normal => purple,
+                    .sub => green,
+                    .sub_sub => orange,
+                }, .font_size = switch (h.level) {
+                    .normal => 40,
+                    .sub => 35,
+                    .sub_sub => 32,
+                } });
+            },
+            .link => |l| {
+                cl.UI()(.{ .id = .ID(l.url), .border = if (cl.hovered()) .{} else .{ .color = blue, .width = .{ .bottom = 2 } } })({
+                    cl.onHover(self, onLinkHover);
+                    cl.text(l.desc orelse l.url, .{ .color = if (cl.hovered()) light_blue else blue, .font_size = 25 });
+                });
+            },
+            .preformat => |pf| {
+                cl.UI()(.{ .background_color = .{ 40, 43, 48, 255 }, .corner_radius = cl.CornerRadius.all(2), .border = .{ .color = dark_grey, .width = cl.BorderWidth.outside(2) } })({
+                    cl.UI()(.{ .layout = .{ .padding = .{ .left = 15, .right = 40 } } })({
+                        cl.text(pf, .{ .color = white, .font_size = 20, .font_id = 1 });
+                    });
+                });
+            },
+        }
+    }
 }
 
 pub fn deinit(self: *Self) void {

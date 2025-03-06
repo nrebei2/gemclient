@@ -32,12 +32,19 @@ pub fn build(b: *std.Build) void {
     });
     exe_mod.addImport("zclay", zclay_dep.module("zclay"));
 
-    const raylib_dep = b.dependency("raylib-zig", .{
+    const tls_dep = b.dependency("tls", .{
         .target = target,
         .optimize = optimize,
     });
-    exe_mod.addImport("raylib", raylib_dep.module("raylib"));    
+    exe_mod.addImport("tls", tls_dep.module("tls")); 
 
+    const raylib_dep = b.dependency("raylib_zig", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    exe_mod.addImport("raylib", raylib_dep.module("raylib"));    
+    
     const raylib_artifact = raylib_dep.artifact("raylib");
     exe_mod.linkLibrary(raylib_artifact);
 

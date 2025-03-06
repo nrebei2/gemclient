@@ -1,4 +1,5 @@
 const std = @import("std");
+const tls = @import("tls");
 
 pub const Status = enum(u16) {
     input = 10,
@@ -59,20 +60,22 @@ pub fn fetch(allocator: std.mem.Allocator, url: []const u8, response_storage: *s
     const stream = try std.net.tcpConnectToHost(allocator, host, uri.port orelse 1965);
     defer stream.close();
 
-    // it seems most servers are self signed, so will not use OS certificates
-    // var bundle = std.crypto.Certificate.Bundle{};
-    // try bundle.rescan(allocator);
+    // Load system root certificates
+    var root_ca = try tls.config.CertBundle.fromSystem(allocator);
+    defer root_ca.deinit(allocator);
 
-    var client = try std.crypto.tls.Client.init(stream, .{
-        .host = .{ .explicit = host },
-        .ca = .self_signed
+    // Upgrade tcp connection to tls
+    var client = try tls.client(stream, .{
+        .host = host,
+        .root_ca = root_ca,
+        .insecure_skip_verify = true,
     });
 
-    try client.writeAll(stream, url);
-    try client.writeAll(stream, "\r\n");
+    try client.writeAll(url);
+    try client.writeAll("\r\n");
 
     var header_buf: [3]u8 = undefined;
-    const header_read = try client.readAll(stream, &header_buf);
+    const header_read = try client.readAll(&header_buf);
 
     if (header_read != 3) {
         return error.bad_response;
@@ -83,8 +86,7 @@ pub fn fetch(allocator: std.mem.Allocator, url: []const u8, response_storage: *s
     const response_buf = try allocator.alloc(u8, 4096);
     defer allocator.free(response_buf);
 
-    response_storage.shrinkRetainingCapacity(0);
-    while (client.readAll(stream, response_buf) catch null) |response_read| {
+    while (client.readAll(response_buf) catch null) |response_read| {
         try response_storage.writer().writeAll(response_buf[0..response_read]);
 
         if (response_read < 4096) {

@@ -7,7 +7,7 @@ const renderer = @import("raylib_render_clay.zig");
 const app = @import("app.zig");
 
 const charset =
-    " !\"#$%&'()*+,-—./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~■¦█";
+    " !\"#$%&'()*+,-—./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~■¦█⬅️";
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -35,11 +35,9 @@ pub fn main() !void {
     loadFont(@embedFile("resources/Arial Unicode MS/arial unicode ms bold.otf"), 0, 24, codepoints);
     loadFont(@embedFile("resources/SFNSMono.ttf"), 1, 24, codepoints);
 
-    const url = "gemini://carcosa.net";
-
+    const url = "gemini://geminiprotocol.net/";
     var a = try app.init(allocator, url);
     defer a.deinit();
-
     
     while (!rl.windowShouldClose()) {
         const mouse_pos = rl.getMousePosition();
@@ -64,6 +62,6 @@ pub fn main() !void {
 }
 
 fn loadFont(file_data: ?[]const u8, font_id: u16, font_size: i32, codepoints: ?[]i32) void {
-    renderer.raylib_fonts[font_id] = rl.loadFontFromMemory(".otf", file_data, font_size * 2, codepoints);
+    renderer.raylib_fonts[font_id] = rl.loadFontFromMemory(".otf", file_data, font_size * 2, codepoints) catch return;
     rl.setTextureFilter(renderer.raylib_fonts[font_id].?.texture, .bilinear);
 }
