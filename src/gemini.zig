@@ -45,20 +45,14 @@ pub const Status = enum(u16) {
     }
 };
 
-pub const FetchResult = struct {
-    status: Status,
-
-    /// The ArrayList will contain
-    /// - input: prompt
-    /// - success: mimetype CRLF body
-    /// - redirect: URI-reference
-    /// - tempfail: errormsg
-    /// - permfail: errormsg
-    /// - auth: errormsg 
-    response_storage: std.ArrayList(u8),
-};
-
-pub fn fetch(allocator: std.mem.Allocator, url: []const u8) !FetchResult {
+/// The response_storage will contain
+/// - input: prompt
+/// - success: mimetype CRLF body
+/// - redirect: URI-reference
+/// - tempfail: errormsg
+/// - permfail: errormsg
+/// - auth: errormsg 
+pub fn fetch(allocator: std.mem.Allocator, url: []const u8, response_storage: *std.ArrayList(u8)) !Status {
     const uri = try std.Uri.parse(url);
     const host = (uri.host orelse return error.invalid_url).percent_encoded;
 
@@ -89,9 +83,7 @@ pub fn fetch(allocator: std.mem.Allocator, url: []const u8) !FetchResult {
     const response_buf = try allocator.alloc(u8, 4096);
     defer allocator.free(response_buf);
 
-    var response_storage = std.ArrayList(u8).init(allocator);
-    errdefer response_storage.deinit();
-
+    response_storage.shrinkRetainingCapacity(0);
     while (client.readAll(stream, response_buf) catch null) |response_read| {
         try response_storage.writer().writeAll(response_buf[0..response_read]);
 
@@ -100,5 +92,5 @@ pub fn fetch(allocator: std.mem.Allocator, url: []const u8) !FetchResult {
         }
     }
 
-    return FetchResult{ .status = status, .response_storage = response_storage };
+    return status;
 }

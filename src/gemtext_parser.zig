@@ -5,7 +5,10 @@ pub const GemtextParser = struct {
     lines: std.mem.SplitIterator(u8, .scalar),
 
     pub fn new(response: []const u8) Self {
-        return Self { .lines = std.mem.splitScalar(u8, response, '\n')};
+        var self = Self { .lines = std.mem.splitScalar(u8, response, '\n')};
+        _ = self.lines.next(); // skip meta line
+
+        return self;
     }
 
     pub fn next(self: *Self) ?Line {
@@ -67,7 +70,7 @@ pub const Level = enum {
 
 pub const Line = union(enum) {
     text: []const u8,
-    link: struct {url_type: enum{relative, absolute}, url: []const u8, desc: ?[]const u8},
+    link: struct {url: []const u8, desc: ?[]const u8},
     heading: struct {level: Level, content: []const u8},
     list: []const u8,
     quote: []const u8,
@@ -76,7 +79,6 @@ pub const Line = union(enum) {
     fn create_link(url: []const u8, desc: ?[]const u8) Line {
         return Line {
             .link = .{
-                .url_type = if (std.mem.startsWith(u8, url, "gemini://")) .absolute else .relative,
                 .url = url, 
                 .desc = desc 
             }
