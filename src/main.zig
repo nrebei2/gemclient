@@ -1,5 +1,6 @@
 const std = @import("std");
 const gemini = @import("gemini.zig");
+const style = @import("style.zig");
 
 const rl = @import("raylib");
 const cl = @import("zclay");
@@ -7,7 +8,7 @@ const renderer = @import("raylib_render_clay.zig");
 const app = @import("app.zig");
 
 const charset =
-    " !\"#$%&'()*+,-—./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~■¦█⬅️";
+    " !\"#$%&'()*+,-—./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~■¦█";
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -35,8 +36,11 @@ pub fn main() !void {
     loadFont(@embedFile("resources/Arial Unicode MS/arial unicode ms bold.otf"), 0, 24, codepoints);
     loadFont(@embedFile("resources/SFNSMono.ttf"), 1, 24, codepoints);
 
+    const back_button_texture = loadImage("resources/go-back.png");
+    const style_options: style = .{.back_button = .{.texture = back_button_texture}, .forward_button = .{ .texture = back_button_texture, .flip_vertically = true }};
+
     const url = "gemini://geminiprotocol.net/";
-    var a = try app.init(allocator, url);
+    var a = try app.init(allocator, url, style_options);
     defer a.deinit();
     
     while (!rl.windowShouldClose()) {
@@ -64,4 +68,10 @@ pub fn main() !void {
 fn loadFont(file_data: ?[]const u8, font_id: u16, font_size: i32, codepoints: ?[]i32) void {
     renderer.raylib_fonts[font_id] = rl.loadFontFromMemory(".otf", file_data, font_size * 2, codepoints) catch return;
     rl.setTextureFilter(renderer.raylib_fonts[font_id].?.texture, .bilinear);
+}
+
+fn loadImage(comptime path: [:0]const u8) rl.Texture2D {
+    const texture = rl.loadTextureFromImage(rl.loadImageFromMemory(@ptrCast(std.fs.path.extension(path)), @embedFile(path)) catch unreachable) catch unreachable;
+    rl.setTextureFilter(texture, .bilinear);
+    return texture;
 }

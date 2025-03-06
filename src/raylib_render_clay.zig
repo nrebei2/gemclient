@@ -1,6 +1,7 @@
 const std = @import("std");
 const rl = @import("raylib");
 const cl = @import("zclay");
+const style = @import("style.zig");
 const math = std.math;
 
 pub fn clayColorToRaylibColor(color: cl.Color) rl.Color {
@@ -29,6 +30,7 @@ pub fn clayRaylibRender(render_commands: *cl.ClayArray(cl.RenderCommand), alloca
                 defer allocator.free(cloned);
                 const fontToUse: rl.Font = raylib_fonts[config.font_id].?;
                 rl.setTextLineSpacing(config.line_height);
+
                 rl.drawTextEx(
                     fontToUse,
                     cloned,
@@ -41,16 +43,21 @@ pub fn clayRaylibRender(render_commands: *cl.ClayArray(cl.RenderCommand), alloca
             .image => {
                 const config = render_command.render_data.image;
 
-                const image_texture: *const rl.Texture2D = @ptrCast(
+                const image_texture_info: *const style.TexInfo = @ptrCast(
                     @alignCast(config.image_data),
                 );
-                rl.drawTextureEx(
-                    image_texture.*,
-                    rl.Vector2{ .x = bounding_box.x, .y = bounding_box.y },
-                    0,
-                    bounding_box.width / @as(f32, @floatFromInt(image_texture.width)),
-                    rl.Color.white,
+
+                const width_scale: f32 = if (image_texture_info.flip_vertically) -1.0 else 1.0;
+
+                rl.drawTexturePro(
+                    image_texture_info.texture,
+                    rl.Rectangle.init(0, 0, @as(f32, @floatFromInt(image_texture_info.texture.width)) * width_scale, @as(f32, @floatFromInt(image_texture_info.texture.height))),
+                    rl.Rectangle.init(bounding_box.x + bounding_box.width / 2, bounding_box.y + bounding_box.height / 2, bounding_box.width, bounding_box.height),
+                    rl.Vector2.init(bounding_box.width / 2, bounding_box.height / 2), 
+                    image_texture_info.rotation, 
+                    image_texture_info.tint
                 );
+
             },
             .scissor_start => {
                 rl.beginScissorMode(

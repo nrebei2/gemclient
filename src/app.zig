@@ -5,6 +5,7 @@ const cl = @import("zclay");
 const rl = @import("raylib");
 const parser = @import("gemtext_parser.zig");
 const renderer = @import("raylib_render_clay.zig");
+const style = @import("style.zig");
 
 const light_grey: cl.Color = .{ 175, 185, 180, 255 };
 const nice_grey: cl.Color = .{ 54, 57, 62, 255 };
@@ -17,21 +18,28 @@ const purple: cl.Color = .{ 114, 137, 218, 255 };
 
 const blue: cl.Color = .{ 100, 149, 237, 255 };
 const light_blue: cl.Color = .{ 96, 130, 182, 255 };
+const MAX_SEARCH_CHARS = 128;
 
 cur_url: []const u8, // owned
 cur_response: std.ArrayList(u8),
 cur_status: gemini.Status = .success,
 hovered_str: ?[]const u8 = null,
 allocator: std.mem.Allocator,
+search_bar: std.BoundedArray(u8, MAX_SEARCH_CHARS),
+mouse_on_search_bar: bool = false,
+frames_counter: usize = 0,
 
 mouse_down_on_scrollbar: bool = false,
 scroll_bar_data: struct { click_origin: cl.Vector2, position_origin: cl.Vector2 } = undefined,
 
-pub fn init(allocator: std.mem.Allocator, starting_url: []const u8) !Self {
+style_options: style,
+
+pub fn init(allocator: std.mem.Allocator, starting_url: []const u8, style_options: style) !Self {
     const cur_url = try allocator.dupe(u8, starting_url);
     errdefer allocator.free(cur_url);
 
-    var self = Self {.allocator = allocator, .cur_response = std.ArrayList(u8).init(allocator), .cur_url = cur_url };
+    var self = Self {.allocator = allocator, .cur_response = std.ArrayList(u8).init(allocator), .cur_url = cur_url, .style_options = style_options, .search_bar = std.BoundedArray(u8, MAX_SEARCH_CHARS){} };
+    self.search_bar.appendSlice(starting_url) catch {};
     try self.update_response();
     return self;
 }
@@ -62,9 +70,14 @@ fn set_url(self: *Self, url: []const u8, url_type: enum{relative, absolute}) !vo
 
     const scrollData = cl.getScrollContainerData(cl.getElementId("MainContent"));
     scrollData.scroll_position.y = 0;
+
+    self.search_bar.clear();
+    self.search_bar.appendSlice(self.cur_url) catch {};
 }
 
 pub fn update(self: *Self, mouse_pos: cl.Vector2) void {
+    self.frames_counter += 1;
+
     const scrollData = cl.getScrollContainerData(cl.getElementId("MainContent"));
     if (rl.isMouseButtonDown(.left) and cl.pointerOver(cl.ElementId.ID("ScrollBar")) and !self.mouse_down_on_scrollbar) {
         self.mouse_down_on_scrollbar = true;
@@ -89,6 +102,33 @@ pub fn update(self: *Self, mouse_pos: cl.Vector2) void {
         }
     }
 
+    if (self.mouse_on_search_bar) {
+        rl.setMouseCursor(.ibeam);
+
+        var key = rl.getCharPressed();
+        while (key > 0) {
+            if ((key >= 32) and (key <= 125)) {
+                self.search_bar.append(@intCast(key)) catch break;
+            }
+
+            key = rl.getCharPressed();
+        }
+
+        if (rl.isKeyPressed(.backspace)) {
+            if (rl.isKeyDown(.left_alt)) {
+                self.search_bar.clear();
+            } else {
+                _ = self.search_bar.pop();
+            }
+        }
+
+        if (rl.isKeyPressed(.enter)) {
+            self.set_url(self.search_bar.slice(), .absolute) catch {};
+        }
+    } else {
+        rl.setMouseCursor(.default);
+    } 
+
     var render_commands = self.createLayout(self.mouse_down_on_scrollbar);
     rl.beginDrawing();
     renderer.clayRaylibRender(&render_commands, self.allocator);
@@ -98,8 +138,33 @@ pub fn update(self: *Self, mouse_pos: cl.Vector2) void {
 fn createLayout(self: *Self, mouse_down_on_scrollbar: bool) cl.ClayArray(cl.RenderCommand) {
     cl.beginLayout();
     cl.UI()(.{ .id = .ID("OuterContainer"), .layout = .{ .direction = .top_to_bottom, .sizing = .grow } })({
-        cl.UI()(.{ .id = .ID("TopPanel"), .layout = .{ .direction = .left_to_right, .sizing = .grow }, .background_color = blue })({
-            cl.text("⬅️ Testing...", .{ .font_size = 25, .color = light_grey }); 
+        cl.UI()(.{ .id = .ID("TopPanel"), .layout = .{ .child_alignment = .{.y = .center}, .padding = .all(4), .direction = .left_to_right, .sizing = .{.w = .grow, .h = .fit}, .child_gap = 4 }, .background_color = blue })({
+            cl.UI()(.{
+                    .id = .ID("BackButton"),
+                    .layout = .{ .sizing = .{ .h = .fixed(40), .w = .fixed(40) } },
+                    .image = .{ .source_dimensions = .{ .h = 40, .w = 40 }, .image_data = @ptrCast(&self.style_options.back_button) },
+                })({});
+            cl.UI()(.{
+                    .id = .ID("ForwardButton"),
+                    .layout = .{ .sizing = .{ .h = .fixed(40), .w = .fixed(40) }},
+                    .image = .{ .source_dimensions = .{ .h = 40, .w = 40 }, .image_data = @ptrCast(&self.style_options.forward_button) },
+                })({});
+
+            cl.UI()(.{
+                    .id = .ID("AddressBar"),
+                    .layout = .{ .padding = .xy(0, 15), .sizing = .grow, .child_alignment = .{.y = .center} }, .background_color = dark_grey,
+                    .corner_radius = cl.CornerRadius.all(3)
+                })({
+                    self.mouse_on_search_bar = cl.hovered();
+                    cl.text(self.search_bar.slice(), .{ .font_size = 20, .color = light_grey }); 
+
+                    if (self.mouse_on_search_bar and self.search_bar.len != self.search_bar.capacity()) {
+                        // blinking underscore char
+                        if (((self.frames_counter / 20) % 2) == 0) {
+                            cl.text("_", .{ .font_size = 20, .color = light_grey }); 
+                        }
+                    }
+                });
         });
         cl.UI()(.{ .id = .ID("MainContent"), .layout = .{ .direction = .top_to_bottom, .sizing = .grow, .padding = .all(32), .child_gap = 10 }, .background_color = nice_grey, .scroll = .{ .vertical = true } })({
             if (self.cur_status == .success) {
@@ -111,7 +176,6 @@ fn createLayout(self: *Self, mouse_down_on_scrollbar: bool) cl.ClayArray(cl.Rend
             }
         });
     });
-
 
     const scrollData = cl.getScrollContainerData(cl.getElementId("MainContent"));
     if (scrollData.found) {
@@ -142,7 +206,7 @@ fn gemtextLayout(self: *Self, content: *parser.GemtextParser) void {
         switch (line) {
             .text => |t| cl.text(t, .{ .font_size = 25, .color = white }),
             .list => |l| {
-                cl.UI()(.{ .id = .ID(l), .layout = .{ .padding = .{ .left = 20 } } })({
+                cl.UI()(.{ .layout = .{ .padding = .{ .left = 20 } } })({
                     cl.text("■", .{
                         .color = orange,
                         .letter_spacing = 6,
@@ -152,8 +216,9 @@ fn gemtextLayout(self: *Self, content: *parser.GemtextParser) void {
                 });
             },
             .quote => |q| {
-                cl.UI()(.{ .id = .ID(q), .background_color = dark_grey, .corner_radius = cl.CornerRadius.all(4), .layout = .{ .sizing = cl.Sizing{ .h = .fit, .w = .grow } } })({
-                    cl.text("█", .{ .color = light_grey, .letter_spacing = 6, .font_size = 30 });
+                cl.UI()(.{ .background_color = dark_grey, .corner_radius = cl.CornerRadius.all(4), .layout = .{ .sizing = cl.Sizing{ .h = .fit, .w = .grow }, .child_alignment = .{.y = .center}, .child_gap = 10 } })({
+                    cl.UI()(.{ .background_color = light_grey, .corner_radius = cl.CornerRadius.all(4), .layout = .{ .sizing = cl.Sizing{ .h = .grow, .w = .fixed(15) } } })({});
+                    // cl.text("█", .{ .color = light_grey, .letter_spacing = 6, .font_size = 30 });
                     cl.text(q, .{ .color = white, .font_size = 25 });
                 });
             },
@@ -189,7 +254,6 @@ pub fn deinit(self: *Self) void {
     self.cur_response.deinit();
     self.allocator.free(self.cur_url);
 }
-
 
 fn onLinkHover(element_id: cl.ElementId, pointer_data: cl.PointerData, context: *Self) void {
     context.hovered_str = element_id.string_id.chars[0..@intCast(element_id.string_id.length)];
