@@ -6,6 +6,7 @@ const rl = @import("raylib");
 const parser = @import("gemtext_parser.zig");
 const renderer = @import("raylib_render_clay.zig");
 const style = @import("style.zig");
+const history = @import("history.zig");
 
 const light_grey: cl.Color = .{ 175, 185, 180, 255 };
 const nice_grey: cl.Color = .{ 54, 57, 62, 255 };
@@ -20,7 +21,8 @@ const blue: cl.Color = .{ 100, 149, 237, 255 };
 const light_blue: cl.Color = .{ 96, 130, 182, 255 };
 const MAX_SEARCH_CHARS = 128;
 
-cur_url: []const u8, // owned
+// cur_url: []const u8, // owned
+url_history: history,
 cur_response: std.ArrayList(u8),
 cur_status: gemini.Status = .success,
 hovered_str: ?[]const u8 = null,
@@ -35,22 +37,30 @@ scroll_bar_data: struct { click_origin: cl.Vector2, position_origin: cl.Vector2 
 style_options: style,
 
 pub fn init(allocator: std.mem.Allocator, starting_url: []const u8, style_options: style) !Self {
-    const cur_url = try allocator.dupe(u8, starting_url);
-    errdefer allocator.free(cur_url);
-
-    var self = Self {.allocator = allocator, .cur_response = std.ArrayList(u8).init(allocator), .cur_url = cur_url, .style_options = style_options, .search_bar = std.BoundedArray(u8, MAX_SEARCH_CHARS){} };
+    var self = Self {.allocator = allocator, .cur_response = std.ArrayList(u8).init(allocator), .style_options = style_options, .search_bar = std.BoundedArray(u8, MAX_SEARCH_CHARS){}, .url_history = history.init(allocator, starting_url) };
     self.search_bar.appendSlice(starting_url) catch {};
+    
+    errdefer self.url_history.deinit();
     try self.update_response();
     return self;
 }
 
-fn update_response(self: *Self) !void {
+fn reset_data(self: *Self) void {
+    const scrollData = cl.getScrollContainerData(cl.getElementId("MainContent"));
+    scrollData.scroll_position.y = 0;
     self.cur_response.clearRetainingCapacity();
-    if (gemini.fetch(self.allocator, self.cur_url, &self.cur_response) catch null) |status| {
+    self.hovered_str = null;
+}
+
+fn update_response(self: *Self) !void {
+    self.search_bar.clear();
+    self.search_bar.appendSlice(self.url_history.cur_url()) catch {};
+
+    if (gemini.fetch(self.allocator, self.url_history.cur_url(), &self.cur_response) catch null) |status| {
         self.cur_status = status;
     } else {
         self.cur_status = .not_found;
-        try std.fmt.format(self.cur_response.writer(), "Could not fetch {s}", .{self.cur_url});
+        try std.fmt.format(self.cur_response.writer(), "Could not fetch {s}", .{self.url_history.cur_url()});
     }
 
     // std.log.debug("{s}", .{self.cur_response.items});
@@ -60,19 +70,12 @@ fn set_url(self: *Self, url: []const u8, url_type: enum{relative, absolute}) !vo
     const new_url = 
         if (url_type == .absolute) try self.allocator.dupe(u8, url) 
         else 
-            if (self.cur_url[self.cur_url.len - 1] == '/') try std.fmt.allocPrint(self.allocator, "{s}{s}", .{self.cur_url, url})
-            else try std.fmt.allocPrint(self.allocator, "{s}/{s}", .{self.cur_url, url});
-    self.allocator.free(self.cur_url);
-    self.cur_url = new_url;
-    self.hovered_str = null;
+            if (self.url_history.cur_url()[self.url_history.cur_url().len - 1] == '/') try std.fmt.allocPrint(self.allocator, "{s}{s}", .{self.url_history.cur_url(), url})
+            else try std.fmt.allocPrint(self.allocator, "{s}/{s}", .{self.url_history.cur_url(), url});
+    self.url_history.append(new_url);
 
+    self.reset_data();
     try self.update_response();
-
-    const scrollData = cl.getScrollContainerData(cl.getElementId("MainContent"));
-    scrollData.scroll_position.y = 0;
-
-    self.search_bar.clear();
-    self.search_bar.appendSlice(self.cur_url) catch {};
 }
 
 pub fn update(self: *Self, mouse_pos: cl.Vector2) void {
@@ -143,12 +146,26 @@ fn createLayout(self: *Self, mouse_down_on_scrollbar: bool) cl.ClayArray(cl.Rend
                     .id = .ID("BackButton"),
                     .layout = .{ .sizing = .{ .h = .fixed(40), .w = .fixed(40) } },
                     .image = .{ .source_dimensions = .{ .h = 40, .w = 40 }, .image_data = @ptrCast(&self.style_options.back_button) },
-                })({});
+                })({
+                    if (self.url_history.can_move_back()) {
+                        if (!cl.hovered()) self.style_options.back_button.tint = renderer.clayColorToRaylibColor(white);
+                        cl.onHover(self, onBackButtonHover);
+                    } else {
+                        self.style_options.back_button.tint = .fromInt(0xFFFFFF80);
+                    } 
+                });
             cl.UI()(.{
                     .id = .ID("ForwardButton"),
                     .layout = .{ .sizing = .{ .h = .fixed(40), .w = .fixed(40) }},
                     .image = .{ .source_dimensions = .{ .h = 40, .w = 40 }, .image_data = @ptrCast(&self.style_options.forward_button) },
-                })({});
+                })({
+                    if (self.url_history.can_move_forward()) {
+                        if (!cl.hovered()) self.style_options.forward_button.tint = renderer.clayColorToRaylibColor(white);
+                        cl.onHover(self, onForwardButtonHover);
+                    } else {
+                        self.style_options.forward_button.tint = .fromInt(0xFFFFFF80);
+                    }
+                });
 
             cl.UI()(.{
                     .id = .ID("AddressBar"),
@@ -252,7 +269,7 @@ fn gemtextLayout(self: *Self, content: *parser.GemtextParser) void {
 
 pub fn deinit(self: *Self) void {
     self.cur_response.deinit();
-    self.allocator.free(self.cur_url);
+    self.url_history.deinit();
 }
 
 fn onLinkHover(element_id: cl.ElementId, pointer_data: cl.PointerData, context: *Self) void {
@@ -264,5 +281,27 @@ fn onLinkHover(element_id: cl.ElementId, pointer_data: cl.PointerData, context: 
         } else {
             context.set_url(context.hovered_str.?, .relative) catch {};
         }
+    }
+}
+
+fn onBackButtonHover(_: cl.ElementId, pointer_data: cl.PointerData, context: *Self) void {
+    context.hovered_str = context.url_history.peek_back();
+    context.style_options.back_button.tint = renderer.clayColorToRaylibColor(if (pointer_data.state == .pressed) nice_grey else light_grey);
+
+    if (pointer_data.state == .released_this_frame and context.url_history.can_move_back()) {
+        context.url_history.move_back();
+        context.reset_data();
+        context.update_response() catch {};
+    }
+}
+
+fn onForwardButtonHover(_: cl.ElementId, pointer_data: cl.PointerData, context: *Self) void {
+    context.hovered_str = context.url_history.peek_forward();
+    context.style_options.forward_button.tint = renderer.clayColorToRaylibColor(if (pointer_data.state == .pressed) nice_grey else light_grey);
+
+    if (pointer_data.state == .released_this_frame and context.url_history.can_move_forward()) {
+        context.url_history.move_forward();
+        context.reset_data();
+        context.update_response() catch {};
     }
 }
