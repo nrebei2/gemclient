@@ -36,8 +36,8 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    exe_mod.addImport("raylib", raylib_dep.module("raylib"));
-    
+    exe_mod.addImport("raylib", raylib_dep.module("raylib"));    
+
     const raylib_artifact = raylib_dep.artifact("raylib");
     exe_mod.linkLibrary(raylib_artifact);
 
