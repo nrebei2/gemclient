@@ -7,6 +7,7 @@ const parser = @import("gemtext_parser.zig");
 const renderer = @import("raylib_render_clay.zig");
 const style = @import("style.zig");
 const history = @import("history.zig");
+const builtin = @import("builtin");
 
 const light_grey: cl.Color = .{ 175, 185, 180, 255 };
 const nice_grey: cl.Color = .{ 54, 57, 62, 255 };
@@ -21,14 +22,19 @@ const blue: cl.Color = .{ 100, 149, 237, 255 };
 const light_blue: cl.Color = .{ 96, 130, 182, 255 };
 const MAX_SEARCH_CHARS = 128;
 
-// cur_url: []const u8, // owned
+const MouseOver = enum {
+    other,
+    search_bar,
+    link
+};
+mouse_over: MouseOver = .other,
+
 url_history: history,
 cur_response: std.ArrayList(u8),
 cur_status: gemini.Status = .success,
 hovered_str: ?[]const u8 = null,
 allocator: std.mem.Allocator,
 search_bar: std.BoundedArray(u8, MAX_SEARCH_CHARS),
-mouse_on_search_bar: bool = false,
 frames_counter: usize = 0,
 
 mouse_down_on_scrollbar: bool = false,
@@ -66,7 +72,13 @@ fn update_response(self: *Self) !void {
     // std.log.debug("{s}", .{self.cur_response.items});
 }
 
-fn set_url(self: *Self, url: []const u8, url_type: enum{relative, absolute}) !void {
+fn set_url(self: *Self, url: []const u8, url_type: enum{relative, absolute, other}) !void {
+    if (url_type == .other) {
+        var cp = std.process.Child.init(&[_][]const u8 {"/usr/bin/open", url}, self.allocator);
+        cp.spawn() catch {};
+        return;
+    }
+
     const new_url = 
         if (url_type == .absolute) try self.allocator.dupe(u8, url) 
         else 
@@ -105,32 +117,38 @@ pub fn update(self: *Self, mouse_pos: cl.Vector2) void {
         }
     }
 
-    if (self.mouse_on_search_bar) {
-        rl.setMouseCursor(.ibeam);
+    switch (self.mouse_over) {
+        .search_bar => {
+            rl.setMouseCursor(.ibeam);
 
-        var key = rl.getCharPressed();
-        while (key > 0) {
-            if ((key >= 32) and (key <= 125)) {
-                self.search_bar.append(@intCast(key)) catch break;
+            var key = rl.getCharPressed();
+            while (key > 0) {
+                if ((key >= 32) and (key <= 125)) {
+                    self.search_bar.append(@intCast(key)) catch break;
+                }
+
+                key = rl.getCharPressed();
             }
 
-            key = rl.getCharPressed();
-        }
-
-        if (rl.isKeyPressed(.backspace)) {
-            if (rl.isKeyDown(.left_alt)) {
-                self.search_bar.clear();
-            } else {
-                _ = self.search_bar.pop();
+            if (rl.isKeyPressed(.backspace)) {
+                if (rl.isKeyDown(.left_alt)) {
+                    self.search_bar.clear();
+                } else {
+                    _ = self.search_bar.pop();
+                }
             }
-        }
 
-        if (rl.isKeyPressed(.enter)) {
-            self.set_url(self.search_bar.slice(), .absolute) catch {};
+            if (rl.isKeyPressed(.enter)) {
+                self.set_url(self.search_bar.slice(), .absolute) catch {};
+            }
+        },
+        .link => {
+            rl.setMouseCursor(.pointing_hand);
+        },
+        .other => {
+            rl.setMouseCursor(.default);
         }
-    } else {
-        rl.setMouseCursor(.default);
-    } 
+    }
 
     var render_commands = self.createLayout(self.mouse_down_on_scrollbar);
     rl.beginDrawing();
@@ -139,6 +157,7 @@ pub fn update(self: *Self, mouse_pos: cl.Vector2) void {
 }
 
 fn createLayout(self: *Self, mouse_down_on_scrollbar: bool) cl.ClayArray(cl.RenderCommand) {
+    self.mouse_over = .other;
     cl.beginLayout();
     cl.UI()(.{ .id = .ID("OuterContainer"), .layout = .{ .direction = .top_to_bottom, .sizing = .grow } })({
         cl.UI()(.{ .id = .ID("TopPanel"), .layout = .{ .child_alignment = .{.y = .center}, .padding = .all(4), .direction = .left_to_right, .sizing = .{.w = .grow, .h = .fit}, .child_gap = 4 }, .background_color = blue })({
@@ -172,12 +191,14 @@ fn createLayout(self: *Self, mouse_down_on_scrollbar: bool) cl.ClayArray(cl.Rend
                     .layout = .{ .padding = .xy(0, 15), .sizing = .grow, .child_alignment = .{.y = .center} }, .background_color = dark_grey,
                     .corner_radius = cl.CornerRadius.all(3)
                 })({
-                    self.mouse_on_search_bar = cl.hovered();
+                    if (cl.hovered()) {
+                        self.mouse_over = .search_bar;
+                    }
                     cl.text(self.search_bar.slice(), .{ .font_size = 20, .color = light_grey }); 
 
-                    if (self.mouse_on_search_bar and self.search_bar.len != self.search_bar.capacity()) {
+                    if (self.mouse_over == .search_bar and self.search_bar.len != self.search_bar.capacity()) {
                         // blinking underscore char
-                        if (((self.frames_counter / 20) % 2) == 0) {
+                        if (((self.frames_counter / 40) % 2) == 0) {
                             cl.text("_", .{ .font_size = 20, .color = light_grey }); 
                         }
                     }
@@ -253,6 +274,9 @@ fn gemtextLayout(self: *Self, content: *parser.GemtextParser) void {
             .link => |l| {
                 cl.UI()(.{ .id = .ID(l.url), .border = if (cl.hovered()) .{} else .{ .color = blue, .width = .{ .bottom = 2 } } })({
                     cl.onHover(self, onLinkHover);
+                    if (cl.hovered()) {
+                        self.mouse_over = .link;
+                    }
                     cl.text(l.desc orelse l.url, .{ .color = if (cl.hovered()) light_blue else blue, .font_size = 25 });
                 });
             },
@@ -276,11 +300,8 @@ fn onLinkHover(element_id: cl.ElementId, pointer_data: cl.PointerData, context: 
     context.hovered_str = element_id.string_id.chars[0..@intCast(element_id.string_id.length)];
 
     if (pointer_data.state == .released_this_frame) {
-        if (std.mem.startsWith(u8, context.hovered_str.?, "gemini://")) {
-            context.set_url(context.hovered_str.?, .absolute) catch {};
-        } else {
-            context.set_url(context.hovered_str.?, .relative) catch {};
-        }
+        context.set_url(context.hovered_str.?, if (std.mem.startsWith(u8, context.hovered_str.?, "gemini://")) .absolute else 
+            if (std.mem.indexOf(u8, context.hovered_str.?, "://")) |_| .other else .relative) catch {};
     }
 }
 

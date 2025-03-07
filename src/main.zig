@@ -8,13 +8,14 @@ const renderer = @import("raylib_render_clay.zig");
 const app = @import("app.zig");
 
 const charset =
-    " !\"#$%&'()*+,-—./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~■¦█";
+    " !\"#$%&'()*+,-—./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~■";
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer std.debug.assert(gpa.deinit() == .ok);
     const allocator = gpa.allocator();
 
+    cl.setMaxElementCount(8192 * 8);
     const min_memory_size: u32 = cl.minMemorySize();
     const memory = try allocator.alloc(u8, min_memory_size);
     defer allocator.free(memory);
@@ -39,8 +40,8 @@ pub fn main() !void {
     const back_button_texture = loadImage("resources/go-back.png");
     const style_options: style = .{.back_button = .{.texture = back_button_texture}, .forward_button = .{ .texture = back_button_texture, .flip_vertically = true }};
 
-    const url = "gemini://geminiprotocol.net/";
-    var a = try app.init(allocator, url, style_options);
+    const starting_url = "gemini://geminiprotocol.net/";
+    var a = try app.init(allocator, starting_url, style_options);
     defer a.deinit();
     
     while (!rl.windowShouldClose()) {
