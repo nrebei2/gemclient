@@ -40,7 +40,7 @@ pub const GemtextParser = struct {
         } else if (std.mem.startsWith(u8, next_line, "* ")) {
             return Line {.quote = next_line[2..]};
         } else if (std.mem.startsWith(u8, next_line, ">")) {
-            return Line {.quote = next_line[1..]};
+            return Line {.quote = next_line[0..]};
         } else if (std.mem.startsWith(u8, next_line, "```")) {
             _ = next_line[3..]; // alt text, unused
 

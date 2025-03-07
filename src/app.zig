@@ -69,12 +69,15 @@ fn update_response(self: *Self) !void {
         self.cur_status = .not_found;
         try std.fmt.format(self.cur_response.writer(), "Could not fetch {s}", .{self.url_history.cur_url()});
     }
-
-    // std.log.debug("{s}", .{self.cur_response.items});
 }
 
-fn set_url(self: *Self, url: []const u8, url_type: enum{relative, absolute, other}) !void {
-    if (url_type == .other) {
+fn set_url(self: *Self, url: []const u8) !void {
+    const url_type: enum{absolute, relative, other} = 
+        if (std.mem.startsWith(u8, url, "gemini://")) .absolute
+        else if (std.mem.indexOf(u8, url, "://")) |_| .other 
+        else .relative;
+    
+    if (url_type == .other and builtin.target.os.tag.isDarwin()) {
         var cp = std.process.Child.init(&[_][]const u8 {"/usr/bin/open", url}, self.allocator);
         cp.spawn() catch {};
         return;
@@ -140,7 +143,7 @@ pub fn update(self: *Self, mouse_pos: cl.Vector2) void {
             }
 
             if (rl.isKeyPressed(.enter)) {
-                self.set_url(self.search_bar.slice(), .absolute) catch {};
+                self.set_url(self.search_bar.slice()) catch {};
             }
 
             if (rl.isKeyPressed(.v)) {
@@ -262,10 +265,11 @@ fn gemtextLayout(self: *Self, content: *parser.GemtextParser) void {
                 });
             },
             .quote => |q| {
-                cl.UI()(.{ .background_color = dark_grey, .corner_radius = cl.CornerRadius.all(4), .layout = .{ .sizing = cl.Sizing{ .h = .fit, .w = .grow }, .child_alignment = .{.y = .center}, .child_gap = 10 } })({
+                cl.UI()(.{ .background_color = dark_grey, .corner_radius = cl.CornerRadius.all(4), .layout = .{ .sizing = cl.Sizing{ .h = .grow, .w = .grow }, .child_alignment = .{.y = .center}, .child_gap = 10 } })({
                     cl.UI()(.{ .background_color = light_grey, .corner_radius = cl.CornerRadius.all(4), .layout = .{ .sizing = cl.Sizing{ .h = .grow, .w = .fixed(15) } } })({});
-                    // cl.text("█", .{ .color = light_grey, .letter_spacing = 6, .font_size = 30 });
-                    cl.text(q, .{ .color = white, .font_size = 25 });
+                     cl.UI()(.{ .layout = .{ .padding = .xy(5, 0) } })({
+                        cl.text(q, .{ .color = white, .font_size = 25 });
+                     });
                 });
             },
             .heading => |h| {
@@ -290,7 +294,7 @@ fn gemtextLayout(self: *Self, content: *parser.GemtextParser) void {
             },
             .preformat => |pf| {
                 cl.UI()(.{ .background_color = .{ 40, 43, 48, 255 }, .corner_radius = cl.CornerRadius.all(2), .border = .{ .color = dark_grey, .width = cl.BorderWidth.outside(2) } })({
-                    cl.UI()(.{ .layout = .{ .padding = .{ .left = 15, .right = 40 } } })({
+                    cl.UI()(.{ .layout = .{ .padding = .{ .left = 15, .right = 40, .top = 20, .bottom = 20 } } })({
                         cl.text(pf, .{ .color = white, .font_size = 20, .font_id = 1 });
                     });
                 });
@@ -308,8 +312,7 @@ fn onLinkHover(element_id: cl.ElementId, pointer_data: cl.PointerData, context: 
     context.hovered_str = element_id.string_id.chars[0..@intCast(element_id.string_id.length)];
 
     if (pointer_data.state == .released_this_frame) {
-        context.set_url(context.hovered_str.?, if (std.mem.startsWith(u8, context.hovered_str.?, "gemini://")) .absolute else 
-            if (std.mem.indexOf(u8, context.hovered_str.?, "://")) |_| .other else .relative) catch {};
+        context.set_url(context.hovered_str.?) catch {};
     }
 }
 

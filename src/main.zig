@@ -8,7 +8,7 @@ const renderer = @import("raylib_render_clay.zig");
 const app = @import("app.zig");
 
 const charset =
-    " !\"#$%&'()*+,-—./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~■";
+    " !\"#$%&'()*+,-–—‒−./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~■→’ʼ″";
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
