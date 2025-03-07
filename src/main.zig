@@ -15,7 +15,6 @@ pub fn main() !void {
     defer std.debug.assert(gpa.deinit() == .ok);
     const allocator = gpa.allocator();
 
-    cl.setMaxElementCount(8192 * 8);
     const min_memory_size: u32 = cl.minMemorySize();
     const memory = try allocator.alloc(u8, min_memory_size);
     defer allocator.free(memory);

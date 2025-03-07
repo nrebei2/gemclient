@@ -48,12 +48,17 @@ pub fn build(b: *std.Build) void {
     const raylib_artifact = raylib_dep.artifact("raylib");
     exe_mod.linkLibrary(raylib_artifact);
 
+    if (target.result.os.tag.isDarwin()) {
+        exe_mod.linkSystemLibrary("objc", .{});
+        exe_mod.linkFramework("Foundation", .{});
+    }
+
     // This creates another `std.Build.Step.Compile`, but this one builds an executable
     // rather than a static library.
     const exe = b.addExecutable(.{
         .name = "zig-gemini",
         .root_module = exe_mod,
-    });
+    });  
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default

@@ -8,6 +8,7 @@ const renderer = @import("raylib_render_clay.zig");
 const style = @import("style.zig");
 const history = @import("history.zig");
 const builtin = @import("builtin");
+const clipboard = @import("clipboard.zig");
 
 const light_grey: cl.Color = .{ 175, 185, 180, 255 };
 const nice_grey: cl.Color = .{ 54, 57, 62, 255 };
@@ -45,7 +46,7 @@ style_options: style,
 pub fn init(allocator: std.mem.Allocator, starting_url: []const u8, style_options: style) !Self {
     var self = Self {.allocator = allocator, .cur_response = std.ArrayList(u8).init(allocator), .style_options = style_options, .search_bar = std.BoundedArray(u8, MAX_SEARCH_CHARS){}, .url_history = history.init(allocator, starting_url) };
     self.search_bar.appendSlice(starting_url) catch {};
-    
+
     errdefer self.url_history.deinit();
     try self.update_response();
     return self;
@@ -140,6 +141,13 @@ pub fn update(self: *Self, mouse_pos: cl.Vector2) void {
 
             if (rl.isKeyPressed(.enter)) {
                 self.set_url(self.search_bar.slice(), .absolute) catch {};
+            }
+
+            if (rl.isKeyPressed(.v)) {
+                if (rl.isKeyDown(.left_control)) {
+                    const count = clipboard.paste_clipboard(self.search_bar.buffer[self.search_bar.len..]);
+                    self.search_bar.resize(self.search_bar.len + count) catch unreachable;
+                }
             }
         },
         .link => {
