@@ -10,17 +10,23 @@ const app = @import("app.zig");
 const charset =
     " !\"#$%&'()*+,-–—‒−./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~■→’ʼ″";
 
+fn error_handler_function(error_data: cl.ErrorData) callconv(.c) void {
+    std.debug.print("Clay Error: {s}\n", .{error_data.error_text.chars[0..@intCast(error_data.error_text.length)]});
+}
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer std.debug.assert(gpa.deinit() == .ok);
     const allocator = gpa.allocator();
 
+    cl.setMaxMeasureTextCacheWordCount(65536);
     const min_memory_size: u32 = cl.minMemorySize();
+    std.debug.print("mms: {d}\n", .{min_memory_size});
     const memory = try allocator.alloc(u8, min_memory_size);
     defer allocator.free(memory);
 
     const arena: cl.Arena = cl.createArenaWithCapacityAndMemory(memory);
-    _ = cl.initialize(arena, .{ .h = 720, .w = 1280 }, .{});
+    _ = cl.initialize(arena, .{ .h = 720, .w = 1280 }, .{.error_handler_function = &error_handler_function});
     cl.setMeasureTextFunction({}, renderer.measureText);
 
     rl.setConfigFlags(.{

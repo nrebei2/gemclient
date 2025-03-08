@@ -74,11 +74,12 @@ fn set_url(self: *Self, url: []const u8) !void {
         return;
     }
 
+    const trimmed_url = if (url[0] == '/') url[1..] else url;
     var new_url = 
-        if (url_type == .absolute) try self.allocator.dupe(u8, url) 
+        if (url_type == .absolute) try self.allocator.dupe(u8, trimmed_url) 
         else 
-            if (self.url_history.cur_url()[self.url_history.cur_url().len - 1] == '/') try std.fmt.allocPrint(self.allocator, "{s}{s}", .{self.url_history.cur_url(), url})
-            else try std.fmt.allocPrint(self.allocator, "{s}/{s}", .{self.url_history.cur_url(), url});
+            if (self.url_history.cur_url()[self.url_history.cur_url().len - 1] == '/') try std.fmt.allocPrint(self.allocator, "{s}{s}", .{self.url_history.cur_url(), trimmed_url})
+            else try std.fmt.allocPrint(self.allocator, "{s}/{s}", .{self.url_history.cur_url(), trimmed_url});
 
     if (!std.mem.endsWith(u8, new_url, "/")) {
         new_url = try self.allocator.realloc(new_url, new_url.len + 1);
@@ -252,7 +253,8 @@ fn createLayout(self: *Self, mouse_down_on_scrollbar: bool) cl.ClayArray(cl.Rend
 }
 
 fn gemtextLayout(self: *Self, content: *parser.GemtextParser) void {
-    while (content.next()) |line| {
+    var idx: u32 = 0;
+    while (content.next()) |line| : (idx += 1) {
         switch (line) {
             .text => |t| cl.text(t, .{ .font_size = 25, .color = self.style_options.colors().text }),
             .list => |l| {
@@ -285,7 +287,7 @@ fn gemtextLayout(self: *Self, content: *parser.GemtextParser) void {
                 } });
             },
             .link => |l| {
-                cl.UI()(.{ .id = .ID(l.url), .border = if (cl.hovered()) .{} else .{ .color = self.style_options.colors().link.text, .width = .{ .bottom = 2 } } })({
+                cl.UI()(.{ .id = .IDI(l.url, idx), .border = if (cl.hovered()) .{} else .{ .color = self.style_options.colors().link.text, .width = .{ .bottom = 2 } } })({
                     cl.onHover(self, onLinkHover);
                     if (cl.hovered()) {
                         self.mouse_over = .link;

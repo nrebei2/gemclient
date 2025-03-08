@@ -25,6 +25,7 @@ pub fn clayRaylibRender(render_commands: *cl.ClayArray(cl.RenderCommand), alloca
             .text => {
                 const config = render_command.render_data.text;
                 const text = config.string_contents.chars[0..@intCast(config.string_contents.length)];
+                
                 // Raylib uses standard C strings so isn't compatible with cheap slices, we need to clone the string to append null terminator
                 const cloned = allocator.dupeZ(u8, text) catch unreachable;
                 defer allocator.free(cloned);
