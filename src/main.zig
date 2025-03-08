@@ -33,13 +33,14 @@ pub fn main() !void {
 
     const codepoints = try rl.loadCodepoints(charset);
     defer rl.unloadCodepoints(codepoints);
-    loadFont(@embedFile("resources/Arial Unicode MS/arial unicode ms bold.otf"), 0, 24, codepoints);
+    loadFont(@embedFile("resources/Roboto-Regular.ttf"), 0, 24, codepoints);
     loadFont(@embedFile("resources/SFNSMono.ttf"), 1, 24, codepoints);
+    loadFont(@embedFile("resources/RobotoMono-Medium.ttf"), 2, 24, codepoints);
 
-    const back_button_texture = loadImage("resources/go-back.png");
-    const style_options: style = .{.back_button = .{.texture = back_button_texture}, .forward_button = .{ .texture = back_button_texture, .flip_vertically = true }};
+    var style_options = style.init(allocator);
+    defer style_options.deinit();
 
-    const starting_url = "gemini://geminiprotocol.net/";
+    const starting_url = style_options.config().general.start_url;
     var a = try app.init(allocator, starting_url, style_options);
     defer a.deinit();
     
@@ -70,8 +71,3 @@ fn loadFont(file_data: ?[]const u8, font_id: u16, font_size: i32, codepoints: ?[
     rl.setTextureFilter(renderer.raylib_fonts[font_id].?.texture, .bilinear);
 }
 
-fn loadImage(comptime path: [:0]const u8) rl.Texture2D {
-    const texture = rl.loadTextureFromImage(rl.loadImageFromMemory(@ptrCast(std.fs.path.extension(path)), @embedFile(path)) catch unreachable) catch unreachable;
-    rl.setTextureFilter(texture, .bilinear);
-    return texture;
-}

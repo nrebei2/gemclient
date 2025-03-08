@@ -1,6 +1,8 @@
 const std = @import("std");
 const tls = @import("tls");
 
+const MAX_REDIRECTS: usize = 3;
+
 pub const Status = enum(u16) {
     input = 10,
     sensitive_input = 11,
@@ -54,6 +56,20 @@ pub const Status = enum(u16) {
 /// - permfail: errormsg
 /// - auth: errormsg 
 pub fn fetch(allocator: std.mem.Allocator, url: []const u8, response_storage: *std.ArrayList(u8)) !Status {
+    return fetch_inner(allocator, url, response_storage, 0);
+}
+
+pub fn fetch_inner(allocator: std.mem.Allocator, url: []const u8, response_storage: *std.ArrayList(u8), depth: usize) !Status {
+    const status = try fetch_no_redirect(allocator, url, response_storage);
+
+    if ((status == .temp_redirect or status == .perm_redirect) and depth < MAX_REDIRECTS) {
+        return fetch_inner(allocator, response_storage.items, response_storage, depth + 1);
+    } else {
+        return status;
+    }
+}
+
+pub fn fetch_no_redirect(allocator: std.mem.Allocator, url: []const u8, response_storage: *std.ArrayList(u8)) !Status {
     const uri = try std.Uri.parse(url);
     const host = (uri.host orelse return error.invalid_url).percent_encoded;
 
@@ -86,12 +102,21 @@ pub fn fetch(allocator: std.mem.Allocator, url: []const u8, response_storage: *s
     const response_buf = try allocator.alloc(u8, 4096);
     defer allocator.free(response_buf);
 
+    response_storage.clearRetainingCapacity();
     while (client.readAll(response_buf) catch null) |response_read| {
         try response_storage.writer().writeAll(response_buf[0..response_read]);
 
         if (response_read < 4096) {
             break;
         }
+    }
+
+    if (status != .success) {
+        response_storage.shrinkRetainingCapacity(response_storage.items.len - 2); // trim /r/n
+    }
+
+    if (status == .temp_redirect or status == .perm_redirect) {
+        
     }
 
     return status;

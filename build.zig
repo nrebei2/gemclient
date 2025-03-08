@@ -48,6 +48,12 @@ pub fn build(b: *std.Build) void {
     const raylib_artifact = raylib_dep.artifact("raylib");
     exe_mod.linkLibrary(raylib_artifact);
 
+    const toml_dep = b.dependency("toml", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    exe_mod.addImport("toml", toml_dep.module("zig-toml")); 
+    
     if (target.result.os.tag.isDarwin()) {
         exe_mod.linkSystemLibrary("objc", .{});
         exe_mod.linkFramework("Foundation", .{});

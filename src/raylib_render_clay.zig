@@ -6,10 +6,10 @@ const math = std.math;
 
 pub fn clayColorToRaylibColor(color: cl.Color) rl.Color {
     return rl.Color{
-        .r = @intFromFloat(color[0]),
-        .g = @intFromFloat(color[1]),
-        .b = @intFromFloat(color[2]),
-        .a = @intFromFloat(color[3]),
+        .r = @intFromFloat(color.r),
+        .g = @intFromFloat(color.g),
+        .b = @intFromFloat(color.b),
+        .a = @intFromFloat(color.a),
     };
 }
 

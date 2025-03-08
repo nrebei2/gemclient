@@ -33,6 +33,7 @@
             .url = "https://github.com/ianic/tls.zig/archive/2e41ad9477cd9569ba2dbf3b8115a7f813f18e74.tar.gz",
             .hash = "tls-0.1.0-ER2e0hr1BACvIoI2gwGIx6RtOQAGWFv008JsSOkhXLxT",
         },
+        .toml = .{ .path = "./zig-toml" },
     },
     .paths = .{
         "build.zig",
