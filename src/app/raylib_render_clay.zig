@@ -1,7 +1,7 @@
 const std = @import("std");
 const rl = @import("raylib");
 const cl = @import("zclay");
-const style = @import("style.zig");
+const style = @import("../style.zig");
 const math = std.math;
 
 pub fn clayColorToRaylibColor(color: cl.Color) rl.Color {

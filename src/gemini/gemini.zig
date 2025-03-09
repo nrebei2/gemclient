@@ -56,17 +56,18 @@ pub const Status = enum(u16) {
 /// - permfail: errormsg
 /// - auth: errormsg 
 pub fn fetch(allocator: std.mem.Allocator, url: []const u8, response_storage: *std.ArrayList(u8)) !Status {
-    return fetch_inner(allocator, url, response_storage, 0);
-}
+    var cur_depth: usize = 0;
+    var status: Status = .not_found;
 
-pub fn fetch_inner(allocator: std.mem.Allocator, url: []const u8, response_storage: *std.ArrayList(u8), depth: usize) !Status {
-    const status = try fetch_no_redirect(allocator, url, response_storage);
+    while (cur_depth <= MAX_REDIRECTS) : (cur_depth += 1) {
+        status = try fetch_no_redirect(allocator, url, response_storage);
 
-    if ((status == .temp_redirect or status == .perm_redirect) and depth < MAX_REDIRECTS) {
-        return fetch_inner(allocator, response_storage.items, response_storage, depth + 1);
-    } else {
-        return status;
+        if (!(status == .temp_redirect or status == .perm_redirect)) {
+            break;
+        }
     }
+
+    return status;
 }
 
 pub fn fetch_no_redirect(allocator: std.mem.Allocator, url: []const u8, response_storage: *std.ArrayList(u8)) !Status {
@@ -113,10 +114,6 @@ pub fn fetch_no_redirect(allocator: std.mem.Allocator, url: []const u8, response
 
     if (status != .success) {
         response_storage.shrinkRetainingCapacity(response_storage.items.len - 2); // trim /r/n
-    }
-
-    if (status == .temp_redirect or status == .perm_redirect) {
-        
     }
 
     return status;

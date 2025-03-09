@@ -1,11 +1,11 @@
 const std = @import("std");
 const Self = @This();
-const gemini = @import("gemini.zig");
+const gemini = @import("../gemini/gemini.zig");
 const cl = @import("zclay");
 const rl = @import("raylib");
-const parser = @import("gemtext_parser.zig");
+const parser = @import("../gemini/gemtext_parser.zig");
 const renderer = @import("raylib_render_clay.zig");
-const style = @import("style.zig");
+const style = @import("../style.zig");
 const history = @import("history.zig");
 const builtin = @import("builtin");
 const clipboard = @import("clipboard.zig");
@@ -32,23 +32,28 @@ scroll_bar_data: struct { click_origin: cl.Vector2, position_origin: cl.Vector2 
 
 style_options: style,
 
-pub fn init(allocator: std.mem.Allocator, starting_url: []const u8, style_options: style) !Self {
-    var self = Self {.allocator = allocator, .cur_response = std.ArrayList(u8).init(allocator), .style_options = style_options, .search_bar = std.BoundedArray(u8, MAX_SEARCH_CHARS){}, .url_history = history.init(allocator, starting_url) };
+pub fn init(allocator: std.mem.Allocator, starting_url: []const u8, style_options: style) Self {
+    var self = Self {
+        .allocator = allocator, 
+        .cur_response = std.ArrayList(u8).init(allocator), 
+        .style_options = style_options, 
+        .search_bar = std.BoundedArray(u8, MAX_SEARCH_CHARS){}, 
+        .url_history = history.init(allocator, starting_url) 
+    };
     self.search_bar.appendSlice(starting_url) catch {};
 
-    errdefer self.url_history.deinit();
-    try self.update_response();
+    self.update_response();
     return self;
 }
 
-fn reset_data(self: *Self) void {
+fn reset_state(self: *Self) void {
     const scrollData = cl.getScrollContainerData(cl.getElementId("MainContent"));
     scrollData.scroll_position.y = 0;
     self.cur_response.clearRetainingCapacity();
     self.hovered_str = null;
 }
 
-fn update_response(self: *Self) !void {
+fn update_response(self: *Self) void {
     self.search_bar.clear();
     self.search_bar.appendSlice(self.url_history.cur_url()) catch {};
 
@@ -56,11 +61,13 @@ fn update_response(self: *Self) !void {
         self.cur_status = status;
     } else {
         self.cur_status = .not_found;
-        try std.fmt.format(self.cur_response.writer(), "Could not fetch {s}", .{self.url_history.cur_url()});
+        std.fmt.format(self.cur_response.writer(), "Could not fetch {s}", .{self.url_history.cur_url()}) catch {};
     }
 }
 
 fn set_url(self: *Self, url: []const u8) !void {
+    if (url.len == 0) return;
+
     const url_type: enum{absolute, relative, other} = 
         if (std.mem.startsWith(u8, url, "gemini://")) .absolute
         else if (std.mem.indexOf(u8, url, "://")) |_| .other 
@@ -76,10 +83,13 @@ fn set_url(self: *Self, url: []const u8) !void {
 
     const trimmed_url = if (url[0] == '/') url[1..] else url;
     var new_url = 
-        if (url_type == .absolute) try self.allocator.dupe(u8, trimmed_url) 
+        if (url_type == .absolute) 
+            try self.allocator.dupe(u8, trimmed_url) 
         else 
-            if (self.url_history.cur_url()[self.url_history.cur_url().len - 1] == '/') try std.fmt.allocPrint(self.allocator, "{s}{s}", .{self.url_history.cur_url(), trimmed_url})
-            else try std.fmt.allocPrint(self.allocator, "{s}/{s}", .{self.url_history.cur_url(), trimmed_url});
+            if (self.url_history.cur_url()[self.url_history.cur_url().len - 1] == '/') 
+                try std.fmt.allocPrint(self.allocator, "{s}{s}", .{self.url_history.cur_url(), trimmed_url})
+            else 
+                try std.fmt.allocPrint(self.allocator, "{s}/{s}", .{self.url_history.cur_url(), trimmed_url});
 
     if (!std.mem.endsWith(u8, new_url, "/")) {
         new_url = try self.allocator.realloc(new_url, new_url.len + 1);
@@ -92,8 +102,8 @@ fn set_url(self: *Self, url: []const u8) !void {
         self.url_history.append(new_url);
     }
 
-    self.reset_data();
-    try self.update_response();
+    self.reset_state();
+    self.update_response();
 }
 
 pub fn update(self: *Self, mouse_pos: cl.Vector2) void {
@@ -117,7 +127,8 @@ pub fn update(self: *Self, mouse_pos: cl.Vector2) void {
 
             const new_scroll_bar_offset = -(new_scroll_y / scrollData.content_dimensions.h) * scrollData.scroll_container_dimensions.h;
 
-            if (new_scroll_bar_offset < 0 or new_scroll_bar_offset + cl.getElementData(cl.getElementId("ScrollBar")).bounding_box.height > scrollData.scroll_container_dimensions.h) {} else {
+            const bb_height = cl.getElementData(cl.getElementId("ScrollBar")).bounding_box.height;
+            if (!(new_scroll_bar_offset < 0 or new_scroll_bar_offset + bb_height > scrollData.scroll_container_dimensions.h)) {
                 scrollData.scroll_position.y = new_scroll_y;
             }
         }
@@ -172,12 +183,31 @@ pub fn update(self: *Self, mouse_pos: cl.Vector2) void {
 fn createLayout(self: *Self, mouse_down_on_scrollbar: bool) cl.ClayArray(cl.RenderCommand) {
     self.mouse_over = .other;
     cl.beginLayout();
-    cl.UI()(.{ .id = .ID("OuterContainer"), .layout = .{ .direction = .top_to_bottom, .sizing = .grow } })({
-        cl.UI()(.{ .id = .ID("TopPanel"), .layout = .{ .child_alignment = .{.y = .center}, .padding = .all(4), .direction = .left_to_right, .sizing = .{.w = .grow, .h = .fit}, .child_gap = 4 }, .background_color = self.style_options.colors().top_panel })({
+    cl.UI()(.{ 
+        .id = .ID("OuterContainer"), 
+        .layout = .{ 
+            .direction = .top_to_bottom, 
+            .sizing = .grow 
+        } 
+    })({
+        cl.UI()(.{ 
+            .id = .ID("TopPanel"), 
+            .layout = .{ 
+                .child_alignment = .{.y = .center}, 
+                .padding = .all(4), 
+                .direction = .left_to_right, 
+                .sizing = .{.w = .grow, .h = .fit}, 
+                .child_gap = 4 
+            }, 
+            .background_color = self.style_options.colors().top_panel 
+        })({
             cl.UI()(.{
                     .id = .ID("BackButton"),
                     .layout = .{ .sizing = .{ .h = .fixed(40), .w = .fixed(40) } },
-                    .image = .{ .source_dimensions = .{ .h = 40, .w = 40 }, .image_data = @ptrCast(&self.style_options.back_button) },
+                    .image = .{ 
+                        .source_dimensions = .{ .h = 40, .w = 40 }, 
+                        .image_data = @ptrCast(&self.style_options.back_button) 
+                    },
                 })({
                     if (self.url_history.can_move_back()) {
                         if (!cl.hovered()) self.style_options.back_button.tint = renderer.clayColorToRaylibColor(cl.Color.white);
@@ -189,7 +219,10 @@ fn createLayout(self: *Self, mouse_down_on_scrollbar: bool) cl.ClayArray(cl.Rend
             cl.UI()(.{
                     .id = .ID("ForwardButton"),
                     .layout = .{ .sizing = .{ .h = .fixed(40), .w = .fixed(40) }},
-                    .image = .{ .source_dimensions = .{ .h = 40, .w = 40 }, .image_data = @ptrCast(&self.style_options.forward_button) },
+                    .image = .{ 
+                        .source_dimensions = .{ .h = 40, .w = 40 }, 
+                        .image_data = @ptrCast(&self.style_options.forward_button) 
+                    },
                 })({
                     if (self.url_history.can_move_forward()) {
                         if (!cl.hovered()) self.style_options.forward_button.tint = renderer.clayColorToRaylibColor(cl.Color.white);
@@ -201,7 +234,12 @@ fn createLayout(self: *Self, mouse_down_on_scrollbar: bool) cl.ClayArray(cl.Rend
 
             cl.UI()(.{
                     .id = .ID("AddressBar"),
-                    .layout = .{ .padding = .xy(0, 15), .sizing = .grow, .child_alignment = .{.y = .center} }, .background_color = self.style_options.colors().address_bar.background,
+                    .layout = .{ 
+                        .padding = .xy(0, 15), 
+                        .sizing = .grow, 
+                        .child_alignment = .{.y = .center} 
+                    }, 
+                    .background_color = self.style_options.colors().address_bar.background,
                     .corner_radius = cl.CornerRadius.all(3)
                 })({
                     if (cl.hovered()) {
@@ -217,7 +255,17 @@ fn createLayout(self: *Self, mouse_down_on_scrollbar: bool) cl.ClayArray(cl.Rend
                     }
                 });
         });
-        cl.UI()(.{ .id = .ID("MainContent"), .layout = .{ .direction = .top_to_bottom, .sizing = .grow, .padding = .all(32), .child_gap = 10 }, .background_color = self.style_options.colors().background, .scroll = .{ .vertical = true } })({
+        cl.UI()(.{ 
+            .id = .ID("MainContent"), 
+            .layout = .{ 
+                .direction = .top_to_bottom, 
+                .sizing = .grow, 
+                .padding = .all(32), 
+                .child_gap = 10 
+            }, 
+            .background_color = self.style_options.colors().background, 
+            .scroll = .{ .vertical = true } 
+        })({
             if (self.cur_status == .success) {
                 var content = parser.GemtextParser.new(self.cur_response.items);
                 self.gemtextLayout(&content);
@@ -232,16 +280,53 @@ fn createLayout(self: *Self, mouse_down_on_scrollbar: bool) cl.ClayArray(cl.Rend
     if (scrollData.found) {
         cl.UI()(.{
             .id = .ID("ScrollBar"),
-            .floating = cl.FloatingElementConfig{ .attach_to = .to_element_with_id, .parentId = cl.getElementId("MainContent").id, .zIndex = 1, .offset = .{ .x = 0, .y = -(scrollData.scroll_position.y / scrollData.content_dimensions.h) * scrollData.scroll_container_dimensions.h }, .attach_points = .{ .element = .right_top, .parent = .right_top } },
+            .floating = cl.FloatingElementConfig { 
+                .attach_to = .to_element_with_id, 
+                .parentId = cl.getElementId("MainContent").id, 
+                .zIndex = 1, 
+                .offset = .{ 
+                    .x = 0, 
+                    .y = -(scrollData.scroll_position.y / scrollData.content_dimensions.h) * scrollData.scroll_container_dimensions.h 
+                }, 
+                .attach_points = .{ .element = .right_top, .parent = .right_top } 
+            },
         })({
-            cl.UI()(.{ .id = .ID("ScrollBarButton"), .layout = cl.LayoutConfig{ .sizing = .{ .w = .fixed(12), .h = .fixed((scrollData.scroll_container_dimensions.h / scrollData.content_dimensions.h) * scrollData.scroll_container_dimensions.h) } }, .background_color = if (mouse_down_on_scrollbar) .{ .r = 220, .g = 220, .b = 220, .a = 255 } else (if (cl.hovered()) .{ .r = 130, .g = 130, .b = 130, .a = 255 } else .{ .r = 90, .g = 90, .b = 90, .a = 255 }), .corner_radius = cl.CornerRadius.all(6) })({});
+            cl.UI()(.{ 
+                .id = .ID("ScrollBarButton"), 
+                .layout = cl.LayoutConfig { 
+                    .sizing = .{ 
+                        .w = .fixed(12), 
+                        .h = .fixed(
+                            (scrollData.scroll_container_dimensions.h / scrollData.content_dimensions.h) *
+                             scrollData.scroll_container_dimensions.h
+                        ) 
+                    } 
+                }, 
+                .background_color = 
+                    if (mouse_down_on_scrollbar) cl.Color.all(220)
+                    else 
+                        if (cl.hovered()) cl.Color.all(130)
+                        else cl.Color.all(90), 
+                .corner_radius = cl.CornerRadius.all(6) 
+            })({});
         });
     }
 
     if (self.hovered_str) |s| {
         cl.UI()(.{
             .id = .ID("AddressTo"),
-            .floating = cl.FloatingElementConfig{ .attach_to = .to_element_with_id, .parentId = cl.getElementId("MainContent").id, .zIndex = 1, .attach_points = .{ .element = .left_bottom, .parent = .left_bottom }}, .background_color = .{ .r = 100, .g = 100, .b = 100, .a = 255 }, .corner_radius = .{.top_left = 1, .top_right = 1, .bottom_right = 1, .bottom_left = 10}, .border = .{ .color = cl.Color.light_gray, .width = cl.BorderWidth.outside(1) } 
+            .floating = cl.FloatingElementConfig { 
+                .attach_to = .to_element_with_id, 
+                .parentId = cl.getElementId("MainContent").id, 
+                .zIndex = 1, 
+                .attach_points = .{ 
+                    .element = .left_bottom, 
+                    .parent = .left_bottom 
+                }
+            }, 
+            .background_color = cl.Color.all(100), 
+            .corner_radius = .{.top_left = 1, .top_right = 1, .bottom_right = 1, .bottom_left = 10}, 
+            .border = .{ .color = cl.Color.light_gray, .width = cl.BorderWidth.outside(1) } 
         })({
             cl.UI()(.{.layout = .{ .padding = .xy(2, 8) }})({
                 cl.text(s, .{.color = cl.Color.white});
@@ -268,37 +353,83 @@ fn gemtextLayout(self: *Self, content: *parser.GemtextParser) void {
                 });
             },
             .quote => |q| {
-                cl.UI()(.{ .background_color = self.style_options.colors().quote.background, .corner_radius = cl.CornerRadius.all(4), .layout = .{ .sizing = cl.Sizing{ .h = .grow, .w = .grow }, .child_alignment = .{.y = .center}, .child_gap = 10 } })({
-                    cl.UI()(.{ .background_color = cl.Color.light_gray, .corner_radius = cl.CornerRadius.all(4), .layout = .{ .sizing = cl.Sizing{ .h = .grow, .w = .fixed(15) } } })({});
-                     cl.UI()(.{ .layout = .{ .padding = .xy(5, 0) } })({
+                cl.UI()(.{ 
+                    .background_color = self.style_options.colors().quote.background, 
+                    .corner_radius = cl.CornerRadius.all(4), 
+                    .layout = .{ 
+                        .sizing = cl.Sizing{ .h = .grow, .w = .grow }, 
+                        .child_alignment = .{.y = .center}, 
+                        .child_gap = 10 
+                    } 
+                })({
+                    cl.UI()(.{ 
+                        .background_color = cl.Color.light_gray, 
+                        .corner_radius = cl.CornerRadius.all(4), 
+                        .layout = .{ 
+                            .sizing = cl.Sizing{ .h = .grow, .w = .fixed(15) } 
+                        } 
+                    })({});
+                    cl.UI()(.{ .layout = .{ .padding = .xy(5, 0) } })({
                         cl.text(q, .{ .color = self.style_options.colors().quote.text, .font_size = 25 });
-                     });
+                    });
                 });
             },
             .heading => |h| {
-                cl.text(h.content, .{ .color = switch (h.level) {
+                const color = switch (h.level) {
                     .normal => self.style_options.colors().h1,
                     .sub => self.style_options.colors().h2,
-                    .sub_sub => self.style_options.colors().h3,
-                }, .font_size = switch (h.level) {
-                    .normal => 40,
-                    .sub => 35,
+                    .sub_sub => self.style_options.colors().h3
+                };
+                const font_size: u16 = switch (h.level) {
+                    .normal => 45,
+                    .sub => 37,
                     .sub_sub => 32,
-                } });
+                };
+                cl.text(h.content, .{ .color = color, .font_size = font_size, .font_id = 2 });
             },
             .link => |l| {
-                cl.UI()(.{ .id = .IDI(l.url, idx), .border = if (cl.hovered()) .{} else .{ .color = self.style_options.colors().link.text, .width = .{ .bottom = 2 } } })({
+                cl.UI()(.{ 
+                    .id = .IDI(l.url, idx), 
+                    .border = 
+                        if (cl.hovered()) .{} 
+                        else .{ .color = self.style_options.colors().link.text, .width = .{ .bottom = 2 } } 
+                })({
                     cl.onHover(self, onLinkHover);
                     if (cl.hovered()) {
                         self.mouse_over = .link;
                     }
-                    cl.text(l.desc orelse l.url, .{ .color = if (cl.hovered()) self.style_options.colors().link.hovered else self.style_options.colors().link.text, .font_size = 25 });
+                    cl.text(
+                        l.desc orelse l.url, 
+                        .{ 
+                            .color = 
+                                if (cl.hovered()) self.style_options.colors().link.hovered
+                                else self.style_options.colors().link.text, .font_size = 25
+                        }
+                    );
                 });
             },
             .preformat => |pf| {
-                cl.UI()(.{ .background_color = .{ .r = 40, .g = 43, .b = 48, .a = 255 }, .corner_radius = cl.CornerRadius.all(2), .border = .{ .color = self.style_options.colors().preformat.background, .width = cl.BorderWidth.outside(2) } })({
-                    cl.UI()(.{ .layout = .{ .padding = .{ .left = 15, .right = 40, .top = 20, .bottom = 20 } } })({
-                        cl.text(pf, .{ .color = self.style_options.colors().preformat.text, .font_size = 20, .font_id = 1 });
+                cl.UI()(.{ 
+                    .background_color = self.style_options.colors().preformat.background, 
+                    .corner_radius = cl.CornerRadius.all(2), 
+                    .border = .{ 
+                        .color = self.style_options.colors().preformat.background, 
+                        .width = cl.BorderWidth.outside(2) 
+                    } 
+                })({
+                    cl.UI()(.{ 
+                        .layout = .{ 
+                            .padding = .{ .left = 15, .right = 40, .top = 20, .bottom = 20 } 
+                        }
+                    })({
+                        cl.text(
+                            pf, 
+                            .{ 
+                                .color = self.style_options.colors().preformat.text, 
+                                .font_size = 20, 
+                                .font_id = 1 
+                            }
+                        );
                     });
                 });
             },
@@ -321,22 +452,24 @@ fn onLinkHover(element_id: cl.ElementId, pointer_data: cl.PointerData, context: 
 
 fn onBackButtonHover(_: cl.ElementId, pointer_data: cl.PointerData, context: *Self) void {
     context.hovered_str = context.url_history.peek_back();
-    context.style_options.back_button.tint = renderer.clayColorToRaylibColor(if (pointer_data.state == .pressed) cl.Color.gray else cl.Color.light_gray);
+    const tint = if (pointer_data.state == .pressed) cl.Color.gray else cl.Color.light_gray;
+    context.style_options.back_button.tint = renderer.clayColorToRaylibColor(tint);
 
     if (pointer_data.state == .released_this_frame and context.url_history.can_move_back()) {
         context.url_history.move_back();
-        context.reset_data();
-        context.update_response() catch {};
+        context.reset_state();
+        context.update_response();
     }
 }
 
 fn onForwardButtonHover(_: cl.ElementId, pointer_data: cl.PointerData, context: *Self) void {
     context.hovered_str = context.url_history.peek_forward();
-    context.style_options.forward_button.tint = renderer.clayColorToRaylibColor(if (pointer_data.state == .pressed) cl.Color.gray else cl.Color.light_gray);
+    const tint = if (pointer_data.state == .pressed) cl.Color.gray else cl.Color.light_gray;
+    context.style_options.forward_button.tint = renderer.clayColorToRaylibColor(tint);
 
     if (pointer_data.state == .released_this_frame and context.url_history.can_move_forward()) {
         context.url_history.move_forward();
-        context.reset_data();
-        context.update_response() catch {};
+        context.reset_state();
+        context.update_response();
     }
 }

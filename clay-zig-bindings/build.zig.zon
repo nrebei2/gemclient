@@ -1,0 +1,18 @@
+.{
+    .name = .zclay,
+    .version = "0.0.0",
+    .dependencies = .{
+        .clay = .{
+            .url = "https://github.com/nicbarker/clay/archive/7a84facec968df81b9fd7dda10cee60c9bd40beb.tar.gz",
+            .hash = "12205b854b62ef63f65c19b979782d2332d5cc88bc7069ec158d584ba8d92d389265",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "vendor",
+        "LICENSE",
+        "README.md",
+    },
+}

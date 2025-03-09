@@ -1,11 +1,11 @@
 const std = @import("std");
-const gemini = @import("gemini.zig");
+const gemini = @import("gemini/gemini.zig");
 const style = @import("style.zig");
 
 const rl = @import("raylib");
 const cl = @import("zclay");
-const renderer = @import("raylib_render_clay.zig");
-const app = @import("app.zig");
+const renderer = @import("app/raylib_render_clay.zig");
+const App = @import("app/app.zig");
 
 const charset =
     " !\"#$%&'()*+,-–—‒−./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~■→’ʼ″";
@@ -21,12 +21,16 @@ pub fn main() !void {
 
     cl.setMaxMeasureTextCacheWordCount(65536);
     const min_memory_size: u32 = cl.minMemorySize();
-    std.debug.print("mms: {d}\n", .{min_memory_size});
+    std.debug.print("Clay arena memory capacity: {d}\n", .{min_memory_size});
     const memory = try allocator.alloc(u8, min_memory_size);
     defer allocator.free(memory);
 
     const arena: cl.Arena = cl.createArenaWithCapacityAndMemory(memory);
-    _ = cl.initialize(arena, .{ .h = 720, .w = 1280 }, .{.error_handler_function = &error_handler_function});
+    _ = cl.initialize(
+        arena, 
+        .{ .h = 720, .w = 1280 },
+        .{.error_handler_function = &error_handler_function}
+    );
     cl.setMeasureTextFunction({}, renderer.measureText);
 
     rl.setConfigFlags(.{
@@ -47,8 +51,8 @@ pub fn main() !void {
     defer style_options.deinit();
 
     const starting_url = style_options.config().general.start_url;
-    var a = try app.init(allocator, starting_url, style_options);
-    defer a.deinit();
+    var app = App.init(allocator, starting_url, style_options);
+    defer app.deinit();
     
     while (!rl.windowShouldClose()) {
         const mouse_pos = rl.getMousePosition();
@@ -68,12 +72,17 @@ pub fn main() !void {
             .h = @floatFromInt(rl.getScreenHeight()),
         });
 
-        a.update(cl_mouse_pos);
+        app.update(cl_mouse_pos);
     }
 }
 
 fn loadFont(file_data: ?[]const u8, font_id: u16, font_size: i32, codepoints: ?[]i32) void {
-    renderer.raylib_fonts[font_id] = rl.loadFontFromMemory(".otf", file_data, font_size * 2, codepoints) catch return;
+    renderer.raylib_fonts[font_id] = rl.loadFontFromMemory(
+        ".ttf", 
+        file_data, 
+        font_size * 2, 
+        codepoints
+    ) catch return;
     rl.setTextureFilter(renderer.raylib_fonts[font_id].?.texture, .bilinear);
 }
 

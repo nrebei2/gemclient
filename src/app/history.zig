@@ -3,7 +3,7 @@ const Self = @This();
 
 allocator: std.mem.Allocator,
 past: std.ArrayList([]const u8), // elements are owned
-current: []const u8,
+current: []const u8, // owned
 future: std.ArrayList([]const u8), // elements are owned
 
 pub fn init(allocator: std.mem.Allocator, starting_url: []const u8) Self {

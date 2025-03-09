@@ -62,7 +62,11 @@ pub fn init(allocator: std.mem.Allocator) Self {
     const back_button_texture = loadImage("resources/go-back.png");
     const result = retrieve_settings_toml(allocator) catch null;
 
-    return Self{.back_button = .{.texture = back_button_texture}, .forward_button = .{ .texture = back_button_texture, .flip_vertically = true }, .toml_result = if (result) |p| .{.parsed = p} else .{.default = .{}}};
+    return Self {
+        .back_button = .{.texture = back_button_texture},
+        .forward_button = .{ .texture = back_button_texture, .flip_vertically = true }, 
+        .toml_result = if (result) |p| .{.parsed = p} else .{.default = .{}}
+    };
 }
 
 fn retrieve_settings_toml(allocator: std.mem.Allocator) !toml.Parsed(Config) {
@@ -72,7 +76,10 @@ fn retrieve_settings_toml(allocator: std.mem.Allocator) !toml.Parsed(Config) {
     const home_dir = try std.process.getEnvVarOwned(allocator, "HOME");
     defer allocator.free(home_dir);
 
-    const settings_dir = try std.mem.concat(allocator, u8, &[2][]const u8 {home_dir, "/.config/gemclient/settings.toml"});
+    const settings_dir = try std.mem.concat(
+        allocator, u8, 
+        &[2][]const u8 {home_dir, "/.config/gemclient/settings.toml"}
+    );
     defer allocator.free(settings_dir);
     
     return parser.parseFile(settings_dir);
@@ -97,7 +104,9 @@ pub fn deinit(self: *Self) void {
 }
 
 fn loadImage(comptime path: [:0]const u8) rl.Texture2D {
-    const texture = rl.loadTextureFromImage(rl.loadImageFromMemory(@ptrCast(std.fs.path.extension(path)), @embedFile(path)) catch unreachable) catch unreachable;
+    const texture = rl.loadTextureFromImage(
+        rl.loadImageFromMemory(@ptrCast(std.fs.path.extension(path)), @embedFile(path)) catch unreachable
+    ) catch unreachable;
     rl.setTextureFilter(texture, .bilinear);
     return texture;
 }
